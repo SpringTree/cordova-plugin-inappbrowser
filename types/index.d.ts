@@ -21,8 +21,9 @@ interface InAppBrowser {
      * @param  options Options for the InAppBrowser. Optional, defaulting to: location=yes.
      *                 The options string must not contain any blank space, and each feature's
      *                 name/value pairs must be separated by a comma. Feature names are case insensitive.
+     * @param  extraHaders Optional key/value structure for providing addional HTTP headers to the resource requested.
      */
-    open(url: string, target?: string, options?: string): InAppBrowser;
+    open(url: string, target?: string, options?: string, extraHaders?: Record<string, string>): InAppBrowser;
 
     onloadstart(type: Event): void;
     onloadstop(type: InAppBrowserEvent): void;

@@ -79,8 +79,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.StringTokenizer;
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -166,8 +168,13 @@ public class InAppBrowser extends CordovaPlugin {
             }
             final String target = t;
             final HashMap<String, String> features = parseFeature(args.optString(2));
+            final Map<String, String> extraHeaders = toStringMap(args.optJSONObject(3));
 
             LOG.d(LOG_TAG, "target = " + target);
+
+            if ( extraHeaders != null ) {
+                LOG.d(LOG_TAG, "extraHeaders = " + extraHeaders.toString() );
+            }
 
             this.cordova.getActivity().runOnUiThread(new Runnable() {
                 @Override
@@ -231,7 +238,7 @@ public class InAppBrowser extends CordovaPlugin {
                         // load in InAppBrowser
                         else {
                             LOG.d(LOG_TAG, "loading in InAppBrowser");
-                            result = showWebPage(url, features);
+                            result = showWebPage(url, features, extraHeaders);
                         }
                     }
                     // SYSTEM
@@ -242,7 +249,7 @@ public class InAppBrowser extends CordovaPlugin {
                     // BLANK - or anything else
                     else {
                         LOG.d(LOG_TAG, "in blank");
-                        result = showWebPage(url, features);
+                        result = showWebPage(url, features, extraHeaders);
                     }
 
                     PluginResult pluginResult = new PluginResult(PluginResult.Status.OK, result);
@@ -445,6 +452,33 @@ public class InAppBrowser extends CordovaPlugin {
     }
 
     /**
+     * Create an Map from a JSONObject
+     *
+     * @param jsonobj
+     * @return
+     * @throws JSONException
+     */
+    private Map<String, String> toStringMap(JSONObject jsonobj)  throws JSONException {
+        if (null == jsonobj || jsonobj.equals(NULL)) {
+            return null;
+        }
+
+        Map<String, String> map = new HashMap<String, String>();
+        Iterator<String> keys = jsonobj.keys();
+        while(keys.hasNext()) {
+            String key = keys.next();
+            Object value = jsonobj.get(key);
+
+            if (value instanceof String) {
+                map.put(key, value.toString());
+            } else {
+                LOG.d(LOG_TAG, "InAppBrowser: Error parameter "+key+" is not a string:"+ value.toString());
+            }
+
+        }   return map;
+    }
+
+    /**
      * Display a new browser with the specified URL.
      *
      * @param url the url to load.
@@ -623,7 +657,7 @@ public class InAppBrowser extends CordovaPlugin {
      * @param url the url to load.
      * @param features jsonObject
      */
-    public String showWebPage(final String url, HashMap<String, String> features) {
+    public String showWebPage(final String url, HashMap<String, String> features, Map<String, String> extraHeaders) {
         // Determine if we should hide the location bar.
         showLocationBar = true;
         showZoomControls = true;
@@ -992,7 +1026,7 @@ public class InAppBrowser extends CordovaPlugin {
                 // Enable Thirdparty Cookies
                 CookieManager.getInstance().setAcceptThirdPartyCookies(inAppWebView,true);
 
-                inAppWebView.loadUrl(url);
+                inAppWebView.loadUrl(url, extraHeaders);
                 inAppWebView.setId(Integer.valueOf(6));
                 inAppWebView.getSettings().setLoadWithOverviewMode(true);
                 inAppWebView.getSettings().setUseWideViewPort(useWideViewPort);
