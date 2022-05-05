@@ -18,6 +18,7 @@
 */
 package org.apache.cordova.inappbrowser;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.content.Context;
@@ -47,6 +48,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
 import android.webkit.HttpAuthHandler;
 import android.webkit.JavascriptInterface;
+import android.webkit.PermissionRequest;
 import android.webkit.SslErrorHandler;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -121,6 +123,8 @@ public class InAppBrowser extends CordovaPlugin {
 
     private static final List customizableOptions = Arrays.asList(CLOSE_BUTTON_CAPTION, TOOLBAR_COLOR, NAVIGATION_COLOR, CLOSE_BUTTON_COLOR, FOOTER_COLOR);
 
+    private static final int REQUEST_CODE_ENABLE_PERMISSION = 55433;
+
     private InAppBrowserDialog dialog;
     private WebView inAppWebView;
     private EditText edittext;
@@ -149,6 +153,38 @@ public class InAppBrowser extends CordovaPlugin {
     private boolean fullscreen = true;
     private String[] allowedSchemes;
     private InAppBrowserClient currentClient;
+
+    /**
+     * This field stores the {@link PermissionRequest} from the web application until it is allowed
+     * or denied by user.
+     */
+    private PermissionRequest mPermissionRequest;
+
+
+    @Override
+    public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) throws JSONException {
+      LOG.d(LOG_TAG, "onRequestPermissionResult: " + requestCode + " Permissions: " + Arrays.toString(permissions) + " GrantResults: " + Arrays.toString(grantResults));
+
+      if (mPermissionRequest == null) {
+        return;
+      }
+
+      for (int r : grantResults) {
+        if (r == PackageManager.PERMISSION_DENIED) {
+          LOG.d(LOG_TAG, "Not all permissions where granted, denying request");
+          mPermissionRequest.deny();
+          mPermissionRequest = null;
+          return;
+        }
+      }
+
+      if (permissions != null && permissions.length > 0) {
+        mPermissionRequest.grant(mPermissionRequest.getResources());
+      } else {
+        mPermissionRequest.deny();
+      }
+      mPermissionRequest = null;
+    }
 
     /**
      * Executes the request and returns PluginResult.
@@ -970,6 +1006,57 @@ public class InAppBrowser extends CordovaPlugin {
                         cordova.startActivityForResult(InAppBrowser.this, Intent.createChooser(content, "Select File"), FILECHOOSER_REQUESTCODE);
                         return true;
                     }
+
+                    // This method is called when the permission request is canceled by the web content.
+                    @Override
+                    public void onPermissionRequestCanceled(PermissionRequest request) {
+                      LOG.d(LOG_TAG, "onPermissionRequestCanceled");
+
+                      mPermissionRequest = null;
+                    }
+
+                    @Override
+                    public void onPermissionRequest(final PermissionRequest request) {
+                        LOG.d(LOG_TAG, "onPermissionRequest");
+
+                        // Keep a reference to the PermissionRequest to grant/deny on handling the result
+                        //
+                        mPermissionRequest = request;
+
+                        // Map the known WebKit permissions / resources to Android permissions
+                        //
+                        ArrayList<String> permissionsList = new ArrayList<String>();
+
+                        final String[] requestedResources = request.getResources();
+
+                        for (String r : requestedResources) {
+                            switch ( r ) {
+                                case PermissionRequest.RESOURCE_VIDEO_CAPTURE:
+                                    permissionsList.add(Manifest.permission.CAMERA);
+                                    break;
+                                case PermissionRequest.RESOURCE_AUDIO_CAPTURE:
+                                    permissionsList.add(Manifest.permission.RECORD_AUDIO);
+                                    permissionsList.add(Manifest.permission.MODIFY_AUDIO_SETTINGS);
+                                    break;
+
+                                default:
+                                    LOG.w(LOG_TAG, "Unknown resource requested: " + r);
+                            }
+                        }
+
+                        if ( permissionsList.size() != 0 ) {
+                            String[] permissions = new String[permissionsList.size()];
+                            permissionsList.toArray(permissions);
+
+                            LOG.w(LOG_TAG, "Requesting permissions: " + Arrays.toString(permissions));
+
+                            cordova.requestPermissions(InAppBrowser.this, REQUEST_CODE_ENABLE_PERMISSION, permissions);
+                        } else {
+                            LOG.i(LOG_TAG, "No known permissions were requested, just grant the WebKit permissions");
+                            mPermissionRequest.grant(request.getResources());
+                            mPermissionRequest = null;
+                        }
+                    }
                 });
                 currentClient = new InAppBrowserClient(thatWebView, edittext, beforeload);
                 inAppWebView.setWebViewClient(currentClient);
@@ -1145,6 +1232,9 @@ public class InAppBrowser extends CordovaPlugin {
             this.edittext = mEditText;
             this.beforeload = beforeload;
             this.waitForBeforeload = beforeload != null;
+
+
+            LOG.setLogLevel(LOG.DEBUG);
         }
 
         /**
